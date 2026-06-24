@@ -7,6 +7,7 @@ volatile bool gStopCmd = false;
 volatile bool gHomingCmd = false;
 volatile float gBat5S = 0;
 volatile float gBat3S = 0;
+volatile float gPragCurentForeza = PRAG_CURENT_30;
 
 static const int DIM_PACHET      = sizeof(PacketTelemetrie);
 static const int OFFSET_CHK_TELE = sizeof(PacketTelemetrie) - 4;
@@ -107,6 +108,19 @@ static bool gasestePachet(const uint8_t* buffer, int nrOcteti, uint32_t magic, i
 }
 
 /**
+ * @brief Aplica nivelul PWM selectat (30/40/50/60%): seteaza duty-ul forezei si pragul de supracurent corespunzator.
+ * @in    pct (procent PWM)
+ * @out   gForezaDuty, gPragCurentForeza
+ */
+static void aplicaNivelPwm(int pct) {
+    switch (pct) {
+        case 40: gForezaDuty = (int)(40 / 100.0 * 255); gPragCurentForeza = PRAG_CURENT_40; break;
+        case 50: gForezaDuty = (int)(50 / 100.0 * 255); gPragCurentForeza = PRAG_CURENT_50; break;
+        default: gForezaDuty = (int)(30 / 100.0 * 255); gPragCurentForeza = PRAG_CURENT_30; break;
+    }
+}
+
+/**
  * @brief Initializeaza pinul CS catre secundar (SPI.begin se face in initDisplay).
  * @in    -
  * @out   -
@@ -179,6 +193,7 @@ void comunicaSPI() {
             if (vitezaSel < 0)   vitezaSel = 0;
             if (vitezaSel > 100) vitezaSel = 100;
             gSemiCruiseUs = SEMI_LENT_US - (SEMI_LENT_US - SEMI_RAPID_US) * vitezaSel / 100;
+            aplicaNivelPwm((int)baterii.pwmForeza);
             break;
         }
 

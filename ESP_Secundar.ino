@@ -6,7 +6,7 @@
 #include <string.h>
 
 const char* AP_SSID = "Foreza";
-const char* AP_PASS = "foreza1234";
+const char* AP_PASS = "12345678";
 
 const int PIN_NTC_5S = 33, PIN_NTC_3S = 32;
 const int PIN_SPI_SCK = 18, PIN_SPI_MOSI = 23, PIN_SPI_MISO = 19, PIN_SPI_CS = 5;
@@ -24,6 +24,7 @@ struct __attribute__((packed)) PacketBaterii {
     float temp5S, temp3S;
     uint32_t comanda;
     uint32_t viteza;      // viteza NEMA selectata (0..100)
+    uint32_t pwmForeza;   // nivel PWM foreza selectat (30/40/50)
     uint32_t chk;
 };
 const uint32_t MAGIC_TELE = 0x7E1E0001;
@@ -51,6 +52,7 @@ volatile uint32_t      gRx = 0;
 volatile unsigned long gLastTeleMs = 0;
 volatile unsigned long gStartReqUntil = 0, gStopReqUntil = 0, gAckReqUntil = 0, gHomingReqUntil = 0;
 volatile uint32_t gVitezaSel = 100;   // viteza NEMA selectata din interfata (0..100, implicit rapid)
+volatile uint32_t gPwmForezaSel = 30; // nivel PWM foreza selectat din interfata (30/40/50)
 
 WebServer server(80);
 
@@ -253,6 +255,17 @@ const char PAGE[] PROGMEM = R"rawliteral(
            oninput="vitVal.textContent=this.value" onchange="setViteza(this.value)">
   </div>
 
+  <div class="vit">
+    <label>PWM foreza:
+      <select id="pwmSelect" onchange="setPwm(this.value)">
+        <option value="30">30%</option>
+        <option value="40">40%</option>
+        <option value="50">50%</option>
+      </select>
+      <span class="u">(se blocheaza dupa pornirea ciclului)</span>
+    </label>
+  </div>
+
   <div class="grid">
     <div class="card">  <div class="lbl">Tensiune 3S</div>  <div class="val" id="t3s">--</div></div>
     <div class="card">  <div class="lbl">Tensiune 5S</div>  <div class="val" id="t5s">--</div></div>
@@ -273,7 +286,7 @@ const char PAGE[] PROGMEM = R"rawliteral(
   <div class="modal" id="modal">
     <div class="box">
       <div class="warn">&#9888; OPRIRE SUPRACURENT</div>
-      <p>Sistemul s-a oprit automat: curentul motorului forezei a depasit pragul de siguranta (&gt; 2.5 A) timp de 3 secunde.</p>
+      <p>Sistemul s-a oprit automat: curentul motorului forezei a depasit pragul de siguranta corespunzator nivelului PWM selectat timp de 7 secunde.</p>
       <button class="btn ack" onclick="ack()">AM INTELES</button>
     </div>
   </div>
@@ -289,7 +302,7 @@ const char PAGE[] PROGMEM = R"rawliteral(
       return x.toFixed(d) + ' <span class="u">' + u + '</span>';
     }
 
-    // Procent baterie (state of charge) din tensiune, pentru un pachet de 'celule' celule
+    // Procent baterie din tensiune, pentru un pachet de 'celule' celule
     function soc(v, celule) {
       const vmin = celule * CELULA_MIN;
       const vmax = celule * CELULA_MAX;
@@ -319,6 +332,8 @@ const char PAGE[] PROGMEM = R"rawliteral(
           btnStop.style.display   = 'block';
           btnHoming.style.display = 'none';
         }
+
+        pwmSelect.disabled = (d.stare !== ST.indexOf("ASTEPT START"));
 
         t3s.innerHTML  = f(d.t3s, 2, 'V') + ' <span class="u">(' + soc(d.t3s, 3) + '%)</span>';
         t5s.innerHTML  = f(d.t5s, 2, 'V') + ' <span class="u">(' + soc(d.t5s, 5) + '%)</span>';
@@ -352,6 +367,7 @@ const char PAGE[] PROGMEM = R"rawliteral(
     async function ack()    { try { await fetch('/api/ack');    } catch (e) {} }
     async function homing() { try { await fetch('/api/homing'); } catch (e) {} }
     async function setViteza(v) { vitVal.textContent = v; try { await fetch('/api/viteza?v=' + v); } catch (e) {} }
+    async function setPwm(v)    { try { await fetch('/api/pwm?v=' + v); } catch (e) {} }
 
     setInterval(tick, 1000);
     tick();
@@ -425,6 +441,22 @@ void handleViteza() {
 }
 
 /**
+ * @brief Seteaza nivelul PWM al forezei selectat din interfata (argument 'v' = 30/40/50).
+ * @in    argumentul HTTP 'v'
+ * @out   gPwmForezaSel
+ */
+void handlePwm() {
+    if (server.hasArg("v")) {
+        long v = server.arg("v").toInt();
+        if (v != 40 && v != 50) {
+            v = 30;
+        }
+        gPwmForezaSel = (uint32_t)v;
+    }
+    server.send(200, "text/plain", "ok");
+}
+
+/**
  * @brief Trimite telemetria curenta ca JSON catre interfata web.
  * @in    gStare, gT3S, gT5S, gILow, gIForez, gPwm, gPozitie, gTPlaca, gTPunteH, gTAmb, gUmid, gBat5S, gBat3S, gLastTeleMs, gRx
  * @out   raspuns HTTP JSON catre client
@@ -480,6 +512,7 @@ void setup() {
     server.on("/api/ack", handleAck);
     server.on("/api/homing", handleHoming);
     server.on("/api/viteza", handleViteza);
+    server.on("/api/pwm", handlePwm);
     server.begin();
 
     xTaskCreatePinnedToCore(webTask, "web", 6144, NULL, 1, NULL, 0);
@@ -508,6 +541,7 @@ void loop() {
         pachetBaterii.comanda = 0;
     }
     pachetBaterii.viteza = gVitezaSel;
+    pachetBaterii.pwmForeza = gPwmForezaSel;
     pachetBaterii.chk = calculeazaChecksum((uint8_t*)&pachetBaterii, OFFSET_CHK_BAT);
 
     gBat5S = pachetBaterii.temp5S;

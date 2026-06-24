@@ -27,14 +27,18 @@ const int PIN_DHT = 0, PIN_SDA = 21, PIN_SCL = 22;
 // Foreza (punte H) + ventilatoare
 const int PIN_EN1 = 26, PIN_EN2 = 27, PIN_PWM1 = 16, PIN_PWM2 = 17;
 const int FRECV_PWM = 5000, REZOL_PWM = 8, DUTY_MAX = 255;
-const int VITEZA = (int)(30.0 / 100.0 * 255);
+const int PWM_FOREZA_DEFAULT_PCT = 30;
+const int VITEZA = (int)(PWM_FOREZA_DEFAULT_PCT / 100.0 * 255);
 const unsigned long RAMP_MS = 1500;
 const int PIN_FANS = 12, FRECV_FAN = 25000, VITEZA_FAN = 200;
 
-// Protectie supracurent foreza
-const float PRAG_CURENT_FOREZA = 2.7;
+// Protectie supracurent foreza - prag distinct pentru fiecare nivel PWM
+const float PRAG_CURENT_30 = 2.7;
+const float PRAG_CURENT_40 = 3.0;
+const float PRAG_CURENT_50 = 3.4;
 const unsigned long TIMP_SUPRA_RETRAGERE_MS = 3000;
-const unsigned long TIMP_SUPRA_WARNING_MS   = 5000;
+const unsigned long TIMP_SUPRA_WARNING_MS   = 7000;
+const float PROC_IMBUNATATIRE_MIN = 0.05;
 
 // SPI catre secundar
 const int PIN_CS_SECUNDAR = 14;
@@ -53,7 +57,7 @@ struct __attribute__((packed)) PacketTelemetrie {
     uint32_t alarma;
     uint32_t chk;
 };
-struct __attribute__((packed)) PacketBaterii { uint32_t magic; float temp5S, temp3S; uint32_t comanda, viteza, chk; };
+struct __attribute__((packed)) PacketBaterii { uint32_t magic; float temp5S, temp3S; uint32_t comanda, viteza, pwmForeza, chk; };
 const uint32_t MAGIC_TELE = 0x7E1E0001, MAGIC_BAT = 0xB17EC0DE, CMD_START = 0xAA, CMD_STOP = 0x55, CMD_ACK = 0x33, CMD_HOMING = 0x77;
 
 // Stari sistem
@@ -63,6 +67,8 @@ enum Faza { HOMING, HOMING_PAUZA, ASTEPTARE, COBORARE, URCARE, OPRIT, RETRAGERE 
 extern volatile Faza faza;
 extern volatile bool forezaActiva, gFaniOn;
 extern volatile int  gPwmForaj;
+extern volatile int  gForezaDuty;
+extern volatile float gPragCurentForeza;
 extern volatile long gPozitie;
 extern volatile unsigned long gSemiCruiseUs;
 extern long pasiCount;

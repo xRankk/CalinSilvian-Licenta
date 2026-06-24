@@ -3,6 +3,7 @@
 volatile bool forezaActiva = false;
 volatile bool gFaniOn = false;
 volatile int  gPwmForaj = 0;
+volatile int  gForezaDuty = VITEZA;
 volatile long gPozitie = 0;
 volatile unsigned long gSemiCruiseUs = SEMI_RAPID_US;   // viteza de cruise (implicit rapid)
 long pasiCount = 0;
@@ -77,8 +78,8 @@ void forezaStartRev() {
 }
 
 /**
- * @brief Creste gradual duty-ul forezei pana la VITEZA (rampa soft-start); de apelat in bucla.
- * @in    forezaActiva, rampStartMs, rampPwmPin
+ * @brief Creste gradual duty-ul forezei pana la gForezaDuty (rampa soft-start); de apelat in bucla.
+ * @in    forezaActiva, rampStartMs, rampPwmPin, gForezaDuty
  * @out   gPwmForaj
  */
 void forezaRampUpdate() {
@@ -88,9 +89,9 @@ void forezaRampUpdate() {
     unsigned long timpScurs = millis() - rampStartMs;
     int duty;
     if (timpScurs >= RAMP_MS) {
-        duty = VITEZA;
+        duty = gForezaDuty;
     } else {
-        duty = (int)((long)VITEZA * timpScurs / RAMP_MS);
+        duty = (int)((long)gForezaDuty * timpScurs / RAMP_MS);
     }
     if (duty != gPwmForaj) {
         pwmActiv(rampPwmPin, duty);

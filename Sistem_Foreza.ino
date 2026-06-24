@@ -7,6 +7,8 @@
 volatile Faza faza = HOMING;
 volatile bool gAlarmaSupracurent = false;
 static unsigned long pauzaStartMs = 0;
+static bool retragereFacuta = false;
+static long adancimeBlocare = 0;
 
 /**
  * @brief Task pe Core 0: achizitie senzori + comunicatie SPI + afisaj (bucla la 300 ms).
@@ -35,6 +37,8 @@ static void pornesteCiclu() {
     digitalWrite(PIN_DIR, !DIR_SUS);
     pasiCount = 0;
     gDirSign = +1;
+    retragereFacuta = false;
+    adancimeBlocare = 0;
     controlFans(VITEZA_FAN);
     forezaStartFwd();
     faza = COBORARE;
@@ -84,9 +88,9 @@ static void startRetragere() {
 }
 
 /**
- * @brief Protectie supracurent in 2 trepte: 3s continuu -> retragere (peck) + continua; 5s cumulat (reset la revenire) -> warning + oprire.
- * @in    forezaActiva, cIForez, faza
- * @out   faza (RETRAGERE sau OPRIT), gAlarmaSupracurent
+ * @brief Protectie supracurent in 2 trepte: 3s continuu -> retragere (peck) + continua; 7s cumulat (reset la revenire) -> warning + oprire. La reblocare fara progres de PROC_IMBUNATATIRE_MIN, oprire directa.
+ * @in    forezaActiva, cIForez, faza, gPozitie
+ * @out   faza (RETRAGERE sau OPRIT), gAlarmaSupracurent, retragereFacuta, adancimeBlocare
  */
 static void verificaSupracurent() {
     static bool eraSupra = false;
@@ -95,7 +99,7 @@ static void verificaSupracurent() {
     static unsigned long cumulatMs = 0;
     unsigned long acum = millis();
 
-    if (forezaActiva && cIForez > PRAG_CURENT_FOREZA) {
+    if (forezaActiva && cIForez > gPragCurentForeza) {
         if (!eraSupra) {
             eraSupra = true;
             startContinuu = acum;
@@ -112,6 +116,15 @@ static void verificaSupracurent() {
             return;
         }
         if (faza == COBORARE && (acum - startContinuu) >= TIMP_SUPRA_RETRAGERE_MS) {
+            if (retragereFacuta && gPozitie < adancimeBlocare + (long)(adancimeBlocare * PROC_IMBUNATATIRE_MIN)) {
+                opresteTot();
+                gAlarmaSupracurent = true;
+                eraSupra = false;
+                cumulatMs = 0;
+                return;
+            }
+            adancimeBlocare = gPozitie;
+            retragereFacuta = true;
             startRetragere();
             startContinuu = acum;
         }
